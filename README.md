@@ -5,6 +5,7 @@ CS-5381 Project – Evolutionary Algorithm with LLM
 uvicorn api:app --reload
 ```
 
+
 ## API
 - `POST /solve/pacman` – evolve Pacman search agent
 - `POST /solve/sorting` – evolve sorting (pivot) strategy
