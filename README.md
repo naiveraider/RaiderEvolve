@@ -7,8 +7,14 @@ uvicorn api:app --reload
 
 
 ## API
+- `GET /health` – basic service health check
 - `POST /solve/pacman` – evolve Pacman search agent
 - `POST /solve/sorting` – evolve sorting (pivot) strategy
+
+Quick check:
+```bash
+curl http://127.0.0.1:8000/health
+```
 
 ## Config (`config.py`)
 

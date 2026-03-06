@@ -10,6 +10,10 @@ PROBLEM_REGISTRY = {
     "sorting": SortingProblem
 }
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 @app.post("/solve/{problem_name}")
 def solve(problem_name: str):
 
