@@ -30,4 +30,5 @@ uvicorn api:app --reload
 **LLM**
 - Set `OPENAI_API_KEY` or `LLM_API_KEY` in config for real API; otherwise mock improvement is used.
 
-
+**UI**
+- UI desin
