@@ -38,3 +38,5 @@ curl http://127.0.0.1:8000/health
 
 **UI**
 - UI design included for visualization
+
+TODO: Add unit tests for core modules (evolution engine, problem mutations, and API endpoints).
