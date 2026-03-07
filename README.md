@@ -37,4 +37,4 @@ curl http://127.0.0.1:8000/health
 - Set `OPENAI_API_KEY` or `LLM_API_KEY` in config for real API; otherwise mock improvement is used.
 
 **UI**
-- UI desin
+- UI design included for visualization
