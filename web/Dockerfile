@@ -19,7 +19,7 @@ COPY . .
 ARG BACKEND_URL=http://backend:8000
 ENV BACKEND_URL=${BACKEND_URL}
 
-RUN npm run build
+RUN npm run build && mkdir -p /app/public   # guarantee public/ exists for COPY
 
 # ── Stage 3: production runner ────────────────────────────────────────────────
 FROM node:20-alpine AS runner
@@ -35,10 +35,8 @@ RUN addgroup --system --gid 1001 nodejs \
 # Next.js standalone output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static     ./.next/static
-
-# public/ folder (copy only if it exists; use a shell RUN to avoid build failure)
-RUN mkdir -p ./public
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# public/ is guaranteed to exist after the build step above
+COPY --from=builder --chown=nextjs:nodejs /app/public           ./public
 
 USER nextjs
 
