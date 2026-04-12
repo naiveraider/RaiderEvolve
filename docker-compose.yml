@@ -1,0 +1,41 @@
+services:
+
+  # ── FastAPI backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: raiderevolve-backend
+    restart: unless-stopped
+    env_file:
+      - .env          # OPENAI_API_KEY, OPENAI_BASE_URL, LLM_MODEL, …
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8000:8000"   # remove / comment out if you don't need host access
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Next.js frontend ─────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        BACKEND_URL: http://backend:8000   # server-side rewrite target inside compose network
+    image: raiderevolve-web
+    restart: unless-stopped
+    environment:
+      - BACKEND_URL=http://backend:8000
+      # Set NEXT_PUBLIC_API_URL to direct the browser to your public backend URL
+      # when using the stream endpoint (optional, leave empty to use the proxy).
+      # - NEXT_PUBLIC_API_URL=https://api.yourdomain.com
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
