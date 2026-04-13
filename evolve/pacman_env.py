@@ -251,40 +251,15 @@ def pacman_fitness(
 # ── baseline ───────────────────────────────────────────────────────────────────
 
 def baseline_pacman_code() -> str:
-    """
-    DFS baseline — finds *a* path but neither shortest nor cheapest.
-    On mud mazes DFS wanders through many mud cells and takes long detours,
-    giving a much lower score than BFS, UCS, or A*.
-
-    Expected evolution chain (improving fitness each generation):
-      DFS (baseline) → BFS → UCS / Dijkstra → A* with Manhattan heuristic
-    """
     return '''\
 def search(start, goal, grid):
-    """DFS — depth-first search, finds a path but not shortest or cheapest.
-
-    Grid legend:
-      \'%\' = wall (impassable)
-      \' \' = open passage (cost 1)
-      \'M\' = mud (cost 5) — DFS blunders through it without hesitation!
-
-    TWO fitness components (both matter):
-      1. Path cost : 1000 - total_cost (mud=5, open=1)
-         DFS takes the muddy short-cut → high cost → low raw_score
-      2. Exploration penalty: -0.2 * (unique_cells_read / total_cells * 100)
-         On largeMudMaze the large open room hangs below the corridor.
-         BFS/UCS flood into the room (~80% of cells); A* stays in the
-         corridor guided by Manhattan heuristic (~22% of cells).
-
-    Expected fitness: DFS≈895 → BFS≈928 → UCS≈952 → A*≈960
-    """
     stack = [(start, [start])]
     seen = {start}
     while stack:
-        s, path = stack.pop()
-        if s == goal:
+        state, path = stack.pop()
+        if state == goal:
             return path
-        r, c = s
+        r, c = state
         for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nr, nc = r + dr, c + dc
             nxt = (nr, nc)

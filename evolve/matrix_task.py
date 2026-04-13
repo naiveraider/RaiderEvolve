@@ -296,36 +296,19 @@ def matrix_correctness_and_ops(
 def baseline_matrix_code() -> str:
     return '''\
 def matmul(a, b):
-    """Standard 3-nested-loop: 27 multiplications → fitness = 1.0 (baseline).
-    Goal: reduce scalar multiplications via Strassen-style factoring.
-    fitness = 1.0 + (27-actual_muls)/27*10  (each saved mul = +0.37)
-    Muls counted at RUNTIME — this loop does 27, not 1.
-    Target: 23 muls (Laderman 1976) → fitness ≈ 2.35
-    """
-    n = 3
-    c = [[0]*n for _ in range(n)]
-    for i in range(n):
-        for j in range(n):
-            for k in range(n):
+    c = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+    for i in range(3):
+        for j in range(3):
+            for k in range(3):
                 c[i][j] += a[i][k] * b[k][j]
     return c
 '''
 
 
 def laderman_matrix_code() -> str:
-    """Laderman 1976 — 23 multiplications, fitness ≈ 2.35.
-    Used as a known-good seed injected into the initial population so the LLM
-    can start from the frontier rather than re-discovering it from scratch.
-    """
     return '''\
 def matmul(a, b):
-    """Laderman 1976: 23 scalar multiplications → fitness ≈ 2.35.
-    Precomputes 23 products of linear combinations of a/b entries,
-    then recovers all 9 output cells via additions only.
-    Goal: find a correct decomposition with fewer than 23 multiplications.
-    Current best known lower bound: 19. Practical target: 21-22.
-    """
-    m = [None] * 24  # 1-indexed to match the original paper
+    m = [None] * 24  # 1-indexed
     m[1]  = (a[0][0]+a[0][1]+a[0][2]-a[1][0]-a[1][1]-a[2][1]-a[2][2])*b[1][1]
     m[2]  = (a[0][0]-a[1][0])*(-b[0][1]+b[1][1])
     m[3]  = a[1][1]*(-b[0][0]+b[0][1]+b[1][0]-b[1][1]-b[1][2]-b[2][0]+b[2][2])

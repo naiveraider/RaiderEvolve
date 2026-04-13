@@ -24,6 +24,7 @@ def build_llm_context(
     generation: int,
     max_generations: int,
     single_shot: bool = False,
+    algo_description: str = "",
 ) -> str:
     """
     Build the LLM prompt context.
@@ -161,6 +162,12 @@ def build_llm_context(
                 "  This Strassen/Laderman approach reduces to 23 muls for 3×3.\n"
                 "OUTPUT: Python function only, no markdown."
             )
+
+    if algo_description.strip():
+        lines.append(
+            "\nALGORITHM/PROBLEM DESCRIPTION (provided by user):\n"
+            + algo_description.strip()
+        )
 
     return "\n".join(lines)
 

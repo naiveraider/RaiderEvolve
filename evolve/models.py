@@ -69,6 +69,7 @@ class EvolutionRequest(BaseModel):
     matrix_fitness: Optional[MatrixFitnessConfig] = None
     strategies: Optional[List[EvolutionStrategy]] = None
     include_pseudocode_log: bool = True
+    algo_description: Optional[str] = None
     seed: Optional[int] = None
 
 

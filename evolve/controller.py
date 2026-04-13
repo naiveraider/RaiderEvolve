@@ -36,6 +36,7 @@ class EvalConfig:
     matrix_alpha: float
     matrix_beta: float
     matrix_fitness_cfg: object = None   # MatrixFitnessConfig | None
+    algo_description: str = ""
 
 
 def _evaluate(
@@ -92,6 +93,7 @@ def run_evolution_run(
         matrix_alpha=req.matrix_alpha,
         matrix_beta=req.matrix_beta,
         matrix_fitness_cfg=req.matrix_fitness if req.task.value == "matrix" else None,
+        algo_description=req.algo_description or "",
     )
 
     seed_code = _initial_code(req.task, req.source_code)
@@ -132,7 +134,8 @@ def run_evolution_run(
     if strategy == EvolutionStrategy.SINGLE_LLM:
         if progress_cb:
             progress_cb({"gen": 0, "total": 1, "strategy": strategy.value, "status": "llm_call"})
-        ctx = build_llm_context(req.task, population, memory, 0, 1, single_shot=True)
+        ctx = build_llm_context(req.task, population, memory, 0, 1,
+                                single_shot=True, algo_description=cfg.algo_description)
         child_code = improve_code_sync(SYSTEM_PROMPT, ctx)
         child = eval_and_store(0, child_code, [root.id], "single_llm", "one-shot LLM refinement")
         population = [max([root, child], key=lambda x: x.fitness)]
@@ -196,7 +199,8 @@ def run_evolution_run(
         # LLM call: once per generation (best parent only) — not once per parent
         if strategy == EvolutionStrategy.FULL:
             best_parent = max(parents, key=lambda x: x.fitness)
-            ctx = build_llm_context(req.task, parents, memory, gen, req.generations)
+            ctx = build_llm_context(req.task, parents, memory, gen, req.generations,
+                                    algo_description=cfg.algo_description)
             try:
                 parent_cap = 1500 if cfg.task == TaskType.MATRIX else 3000
                 llm_code = improve_code_sync(

@@ -58,29 +58,13 @@ type ChartRow = { generation: number } & Partial<Record<Strategy, number | null>
 
 // ── default source code shown in the textarea ─────────────────────────────────
 const BASELINE_PACMAN = `def search(start, goal, grid):
-    """DFS — depth-first search.  Finds a path, but not shortest or cheapest.
-
-    Grid legend:
-      '%' = wall (impassable)
-      ' ' = open passage (cost 1)
-      'M' = mud (cost 5)  ← DFS blunders through mud without hesitation!
-
-    Score = 1000 - total_path_cost  (higher = cheaper path).
-    TWO fitness components (both matter):
-      1. Path cost    : 1000 - total_cost (mud=5, open=1)
-      2. Exploration  : penalty for reading too many grid cells
-         (BFS/UCS flood into the open room below the corridor;
-          A* stays in the corridor and reaches the goal directly)
-
-    Expected fitness: DFS≈895 → BFS≈928 → UCS≈952 → A*≈960
-    """
     stack = [(start, [start])]
     seen = {start}
     while stack:
-        s, path = stack.pop()
-        if s == goal:
+        state, path = stack.pop()
+        if state == goal:
             return path
-        r, c = s
+        r, c = state
         for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nr, nc = r + dr, c + dc
             nxt = (nr, nc)
@@ -94,15 +78,6 @@ const BASELINE_PACMAN = `def search(start, goal, grid):
 `;
 
 const BASELINE_MATRIX = `def matmul(a, b):
-    """Standard 3×3 matrix multiply: C = A × B
-    C[i][j] = sum(A[i][k] * B[k][j] for k in range(3))
-
-    Operations: 27 multiplications, 18 additions → fitness = 1.0 (baseline)
-
-    fitness = 1.0 + (27 - actual_muls) / 27 * 10
-      25 muls → 1.74  |  23 muls (Laderman 1976) → 2.35  |  21 muls → 3.08
-    Muls counted at RUNTIME — this loop performs 27 real multiplications.
-    """
     c = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
     for i in range(3):
         for j in range(3):
@@ -119,6 +94,12 @@ const DEFAULT_CODE: Record<Task, string> = {
 const DEFAULT_PRESET: Record<Task, FitnessPreset> = {
   pacman: "pacman",
   matrix: "matrix",
+};
+
+// ── Algorithm / Problem descriptions ──────────────────────────────────────────
+const ALGO_DESC: Record<Task, string> = {
+  pacman: `Find the lowest-cost path from start to goal in a weighted grid maze`,
+  matrix: `Compute the product of two 3×3 matrices correctly using as few scalar multiplications as possible.`,
 };
 
 /** Prefer NEXT_PUBLIC_API_URL in dev to hit FastAPI directly (avoids proxy timeouts). */
@@ -147,6 +128,8 @@ export default function Page() {
   const matrixAlpha = 0.0;
   const matrixBeta  = 0.0;
 
+  const [algoDesc, setAlgoDesc] = useState<string>(ALGO_DESC["pacman"]);
+
   // Matrix fitness component weights (each 0–1)
   const [mfMuls,        setMfMuls]        = useState(1.0);
   const [mfAdds,        setMfAdds]        = useState(0.2);
@@ -165,6 +148,7 @@ export default function Page() {
   // When task changes: sync default code, fitness preset, and fast defaults
   useEffect(() => {
     setSourceCode(DEFAULT_CODE[task]);
+    setAlgoDesc(ALGO_DESC[task]);
     setFitnessPreset(DEFAULT_PRESET[task]);
     if (task === "matrix") {
       // matmul LLM calls are slower per token; use fewer generations + 1 strategy
@@ -241,6 +225,7 @@ export default function Page() {
       } : null,
       strategies,
       include_pseudocode_log: true,
+      algo_description: algoDesc.trim() || null,
     };
 
     try {
@@ -436,10 +421,19 @@ export default function Page() {
             <p className="muted" style={{ marginTop: "0.75rem" }}>
               Edit or replace the baseline below, or leave it as-is to evolve from scratch.
             </p>
-            <label style={{ marginTop: "0.5rem" }}>Source code</label>
+            <label style={{ marginTop: "0.5rem" }}>Initial Code</label>
             <textarea
               value={sourceCode}
               onChange={(e) => setSourceCode(e.target.value)}
+            />
+            <label style={{ marginTop: "0.75rem" }}>Algorithm / Problem Description</label>
+            <p className="muted" style={{ marginTop: 0, marginBottom: 4, fontSize: "0.78rem" }}>
+              Pseudocode or structured description — editable, shown to the LLM as context.
+            </p>
+            <textarea
+              value={algoDesc}
+              onChange={(e) => setAlgoDesc(e.target.value)}
+              style={{ fontFamily: "monospace", fontSize: "0.78rem", minHeight: "14rem", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
             />
           </section>
 
