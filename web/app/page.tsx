@@ -57,30 +57,56 @@ type EvolutionResponse = {
 type ChartRow = { generation: number } & Partial<Record<Strategy, number | null>>;
 
 // ── default source code shown in the textarea ─────────────────────────────────
-const BASELINE_PACMAN = `# pacman-agent
-def choose_action(state):
-    px, py = state["pacman"]
-    foods = state["foods"]
-    if not foods:
-        return "E"
-    fx, fy = min(foods, key=lambda p: abs(p[0] - px) + abs(p[1] - py))
-    if fx > px:
-        return "E"
-    if fx < px:
-        return "W"
-    if fy > py:
-        return "S"
-    if fy < py:
-        return "N"
-    return "E"
+const BASELINE_PACMAN = `def search(start, goal, grid):
+    """DFS — depth-first search.  Finds a path, but not shortest or cheapest.
+
+    Grid legend:
+      '%' = wall (impassable)
+      ' ' = open passage (cost 1)
+      'M' = mud (cost 5)  ← DFS blunders through mud without hesitation!
+
+    Score = 1000 - total_path_cost  (higher = cheaper path).
+    TWO fitness components (both matter):
+      1. Path cost    : 1000 - total_cost (mud=5, open=1)
+      2. Exploration  : penalty for reading too many grid cells
+         (BFS/UCS flood into the open room below the corridor;
+          A* stays in the corridor and reaches the goal directly)
+
+    Expected fitness: DFS≈895 → BFS≈928 → UCS≈952 → A*≈960
+    """
+    stack = [(start, [start])]
+    seen = {start}
+    while stack:
+        s, path = stack.pop()
+        if s == goal:
+            return path
+        r, c = s
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            nxt = (nr, nc)
+            if (0 <= nr < len(grid)
+                    and 0 <= nc < len(grid[nr])
+                    and grid[nr][nc] != '%'
+                    and nxt not in seen):
+                seen.add(nxt)
+                stack.append((nxt, path + [nxt]))
+    return [start]
 `;
 
 const BASELINE_MATRIX = `def matmul(a, b):
-    n = 3
+    """Standard 3×3 matrix multiply: C = A × B
+    C[i][j] = sum(A[i][k] * B[k][j] for k in range(3))
+
+    Operations: 27 multiplications, 18 additions → fitness = 1.0 (baseline)
+
+    fitness = 1.0 + (27 - actual_muls) / 27 * 10
+      25 muls → 1.74  |  23 muls (Laderman 1976) → 2.35  |  21 muls → 3.08
+    Muls counted at RUNTIME — this loop performs 27 real multiplications.
+    """
     c = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
-    for i in range(n):
-        for j in range(n):
-            for k in range(n):
+    for i in range(3):
+        for j in range(3):
+            for k in range(3):
                 c[i][j] += a[i][k] * b[k][j]
     return c
 `;
@@ -118,8 +144,10 @@ export default function Page() {
   const [w1, setW1] = useState(0.5);
   const [w2, setW2] = useState(0.3);
   const [w3, setW3] = useState(0.2);
-  const [matrixAlpha, setMatrixAlpha] = useState(0.01);
-  const [matrixBeta, setMatrixBeta] = useState(0.005);
+  // matrix_alpha / matrix_beta are kept for API shape compatibility but the
+  // backend now uses hardcoded MUL_WEIGHT=10 / ADD_WEIGHT=0.05 internally.
+  const matrixAlpha = 0.0;
+  const matrixBeta  = 0.0;
   const [strategies, setStrategies] = useState<Strategy[]>([
     "single_llm",
     "random_only",
@@ -129,10 +157,20 @@ export default function Page() {
     "top_k"
   );
 
-  // When task changes: sync default code and matching fitness preset
+  // When task changes: sync default code, fitness preset, and fast defaults
   useEffect(() => {
     setSourceCode(DEFAULT_CODE[task]);
     setFitnessPreset(DEFAULT_PRESET[task]);
+    if (task === "matrix") {
+      // matmul LLM calls are slower per token; use fewer generations + 1 strategy
+      setGenerations(3);
+      setPopulationSize(3);
+      setStrategies(["full"]);
+    } else {
+      setGenerations(4);
+      setPopulationSize(6);
+      setStrategies(["single_llm", "random_only", "full"]);
+    }
   }, [task]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -285,8 +323,6 @@ export default function Page() {
     w1,
     w2,
     w3,
-    matrixAlpha,
-    matrixBeta,
   ]);
 
   const comparisonData = useMemo(() => {
@@ -313,6 +349,39 @@ export default function Page() {
 
   const primaryRun = result?.runs[codeRunIdx] ?? result?.runs[0];
   const fullRun = result?.runs.find((r) => r.strategy === "full");
+
+  // Pacman-specific per-generation metrics extracted from the best record each gen
+  type PacmanMetricRow = {
+    generation: number;
+    steps: number | null;
+    cost: number | null;
+    cells: number | null;
+    runtime_ms: number | null;
+    success: number | null;
+  };
+  const pacmanMetrics = useMemo((): PacmanMetricRow[] => {
+    if (!result || task !== "pacman") return [];
+    const run = result.runs.find((r) => r.strategy === "full") ?? result.runs[0];
+    if (!run) return [];
+    // best record per generation
+    const byGen = new Map<number, CandidateRecord>();
+    for (const rec of run.memory_records) {
+      const cur = byGen.get(rec.generation);
+      if (!cur || rec.fitness > cur.fitness) byGen.set(rec.generation, rec);
+    }
+    const maxGen = Math.max(0, ...byGen.keys());
+    return Array.from({ length: maxGen + 1 }, (_, i) => {
+      const m = byGen.get(i)?.metrics as Record<string, unknown> | undefined;
+      return {
+        generation: i,
+        steps:      (m?.avg_steps    as number | undefined) ?? null,
+        cost:       (m?.avg_cost     as number | undefined) ?? null,
+        cells:      (m?.avg_cells_accessed as number | undefined) ?? null,
+        runtime_ms: (m?.eval_time_ms as number | undefined) ?? null,
+        success:    m?.success_rate != null ? Math.round((m.success_rate as number) * 100) : null,
+      };
+    });
+  }, [result, task]);
 
   const bestUpToValue = useMemo(() => {
     if (!fullRun) return null;
@@ -403,7 +472,7 @@ export default function Page() {
               onChange={(e) => setFitnessPreset(e.target.value as FitnessPreset)}
             >
               <option value="pacman">Pacman (w1·score + w2·survival − w3·steps)</option>
-              <option value="matrix">Matrix (correctness − α·mul − β·add)</option>
+              <option value="matrix">Matrix (correctness + operation cost)</option>
               <option value="custom">Custom weights (Pacman task only)</option>
             </select>
             {fitnessPreset === "custom" && task === "pacman" && (
@@ -423,24 +492,27 @@ export default function Page() {
               </div>
             )}
             {task === "matrix" && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                <div>
-                  <label>α (mul penalty)</label>
-                  <input
-                    type="number"
-                    step={0.001}
-                    value={matrixAlpha}
-                    onChange={(e) => setMatrixAlpha(+e.target.value)}
-                  />
+              <div style={{
+                marginTop: 8,
+                padding: "10px 12px",
+                background: "var(--surface2, #1e1e2e)",
+                borderRadius: 6,
+                fontSize: "0.82rem",
+                lineHeight: 1.65,
+                color: "var(--text2, #cdd6f4)",
+                fontFamily: "monospace",
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 4, fontFamily: "sans-serif", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", opacity: 0.7 }}>Fitness = correctness + operation cost</div>
+                <div>fitness = <strong>correctness</strong> (1 if correct, −10 if wrong)</div>
+                <div>&nbsp;&nbsp;&nbsp;&nbsp;+ <strong style={{color:"#a6e3a1"}}>mul savings</strong> = (27 − actual_muls) / 27 × 10</div>
+                <div>&nbsp;&nbsp;&nbsp;&nbsp;+ <strong>add savings</strong> = (27 − actual_adds) / 27 × 0.05</div>
+                <div style={{ marginTop: 6, opacity: 0.75, fontFamily: "sans-serif" }}>
+                  Operations counted at <em>runtime</em> — loops × iterations, not AST symbols.
                 </div>
-                <div>
-                  <label>β (add penalty)</label>
-                  <input
-                    type="number"
-                    step={0.001}
-                    value={matrixBeta}
-                    onChange={(e) => setMatrixBeta(+e.target.value)}
-                  />
+                <div style={{ marginTop: 4, borderTop: "1px solid #313244", paddingTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
+                  <span>Standard loop (27 muls)</span><span style={{color:"#f38ba8"}}>1.000</span>
+                  <span>25 muls</span><span style={{color:"#fab387"}}>≈ 1.74</span>
+                  <span>Laderman 1976 (23 muls)</span><span style={{color:"#a6e3a1"}}>≈ 2.35</span>
                 </div>
               </div>
             )}
@@ -582,6 +654,99 @@ export default function Page() {
               />
             </div>
           </section>
+
+          {/* ── Pacman runtime metrics ───────────────────────────── */}
+          {task === "pacman" && pacmanMetrics.length > 0 && (
+            <section className="panel">
+              <h2>Pacman metrics over generations</h2>
+              <p className="muted">
+                Best candidate per generation (full-evolution run). Lower cost/steps/cells = better.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+
+                {/* Steps */}
+                <div>
+                  <p style={{ fontSize: "0.8rem", margin: "0 0 4px", color: "var(--muted)" }}>
+                    Avg Steps (path length)
+                  </p>
+                  <div style={{ height: 160 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={pacmanMetrics}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#243044" />
+                        <XAxis dataKey="generation" stroke="#8b9cb3" tick={{ fontSize: 11 }} />
+                        <YAxis stroke="#8b9cb3" tick={{ fontSize: 11 }} width={40} />
+                        <Tooltip contentStyle={{ background: "#141a22", border: "1px solid #243044", fontSize: 12 }} />
+                        <Line type="monotone" dataKey="steps" stroke="#5eead4" dot={false} connectNulls name="steps" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Path Cost */}
+                <div>
+                  <p style={{ fontSize: "0.8rem", margin: "0 0 4px", color: "var(--muted)" }}>
+                    Avg Path Cost (mud=5, open=1)
+                  </p>
+                  <div style={{ height: 160 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={pacmanMetrics}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#243044" />
+                        <XAxis dataKey="generation" stroke="#8b9cb3" tick={{ fontSize: 11 }} />
+                        <YAxis stroke="#8b9cb3" tick={{ fontSize: 11 }} width={40} />
+                        <Tooltip contentStyle={{ background: "#141a22", border: "1px solid #243044", fontSize: 12 }} />
+                        <Line type="monotone" dataKey="cost" stroke="#fbbf24" dot={false} connectNulls name="cost" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Runtime — wall-clock ms the generated code took to run */}
+                <div>
+                  <p style={{ fontSize: "0.8rem", margin: "0 0 4px", color: "var(--muted)" }}>
+                    Code Runtime (ms)
+                  </p>
+                  <div style={{ height: 160 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={pacmanMetrics}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#243044" />
+                        <XAxis dataKey="generation" stroke="#8b9cb3" tick={{ fontSize: 11 }} />
+                        <YAxis stroke="#8b9cb3" tick={{ fontSize: 11 }} width={40} />
+                        <Tooltip contentStyle={{ background: "#141a22", border: "1px solid #243044", fontSize: 12 }} />
+                        <Line type="monotone" dataKey="runtime_ms" stroke="#f87171" dot={false} connectNulls name="ms" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Generation count summary */}
+              <div style={{
+                marginTop: 12,
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 8,
+                fontSize: "0.82rem",
+              }}>
+                {[
+                  { label: "Generations",   value: pacmanMetrics.length },
+                  { label: "Final steps",   value: pacmanMetrics.at(-1)?.steps?.toFixed(0)      ?? "—" },
+                  { label: "Final cost",    value: pacmanMetrics.at(-1)?.cost?.toFixed(1)        ?? "—" },
+                  { label: "Final runtime", value: pacmanMetrics.at(-1)?.runtime_ms != null ? `${pacmanMetrics.at(-1)!.runtime_ms} ms` : "—" },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{
+                    padding: "8px 10px",
+                    background: "var(--surface2, #1e1e2e)",
+                    borderRadius: 6,
+                    textAlign: "center",
+                  }}>
+                    <div style={{ color: "var(--muted)", fontSize: "0.72rem", marginBottom: 2 }}>{label}</div>
+                    <strong>{String(value)}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="panel">
             <h2>Figure 2 — best up to generation</h2>

@@ -110,6 +110,7 @@ def run_evolution_run(
     population: list[CandidateRecord] = [root]
     if strategy != EvolutionStrategy.SINGLE_LLM and req.population_size > 1:
         seen: set[str] = {code_hash(seed_code)}
+
         for _ in range(req.population_size - 1):
             code_v, note_v = random_mutate(seed_code, rng)
             h = code_hash(code_v)
@@ -194,9 +195,10 @@ def run_evolution_run(
             best_parent = max(parents, key=lambda x: x.fitness)
             ctx = build_llm_context(req.task, parents, memory, gen, req.generations)
             try:
+                parent_cap = 1500 if cfg.task == TaskType.MATRIX else 3000
                 llm_code = improve_code_sync(
                     SYSTEM_PROMPT,
-                    ctx + f"\nPARENT_CODE:\n{best_parent.code[:8000]}",
+                    ctx + f"\nPARENT_CODE:\n{best_parent.code[:parent_cap]}",
                 )
                 mutations_log.append("LLM refinement (best parent)")
                 candidates.append((llm_code, "llm", "llm_mutation", [best_parent.id]))

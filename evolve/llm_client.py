@@ -88,6 +88,35 @@ def _parse_completion(data: dict[str, Any]) -> str:
     return extract_code_block(content or "")
 
 
+# Per-task max_tokens: matmul code is short (~40 lines); pacman code is longer.
+# Capping tokens dramatically reduces LLM response time (model stops earlier).
+_MAX_TOKENS_BY_TASK = {
+    "matrix": 700,
+    "pacman": 1400,
+}
+_DEFAULT_MAX_TOKENS = 1200
+
+
+def _build_payload(system_prompt: str, user_prompt: str, max_tokens: int) -> dict:
+    return {
+        "model": settings.llm_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_prompt},
+        ],
+        "temperature": 0.35,
+        "max_tokens":  max_tokens,
+    }
+
+
+def _detect_max_tokens(user_prompt: str) -> int:
+    lp = user_prompt.lower()
+    for task, tokens in _MAX_TOKENS_BY_TASK.items():
+        if task in lp:
+            return tokens
+    return _DEFAULT_MAX_TOKENS
+
+
 async def improve_code_async(
     system_prompt: str,
     user_prompt: str,
@@ -95,18 +124,12 @@ async def improve_code_async(
     if not settings.openai_api_key:
         return _mock_improve(user_prompt)
 
-    url = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
+    url     = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
-    payload = {
-        "model": settings.llm_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.35,
-    }
+    payload = _build_payload(system_prompt, user_prompt, _detect_max_tokens(user_prompt))
+
     last_response: httpx.Response | None = None
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=45.0) as client:
         for attempt in range(_MAX_ATTEMPTS):
             r = await client.post(url, json=payload, headers=headers)
             last_response = r
@@ -127,18 +150,12 @@ def improve_code_sync(system_prompt: str, user_prompt: str) -> str:
     if not settings.openai_api_key:
         return _mock_improve(user_prompt)
 
-    url = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
+    url     = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
-    payload = {
-        "model": settings.llm_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.35,
-    }
+    payload = _build_payload(system_prompt, user_prompt, _detect_max_tokens(user_prompt))
+
     last_response: httpx.Response | None = None
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=45.0) as client:
         for attempt in range(_MAX_ATTEMPTS):
             r = client.post(url, json=payload, headers=headers)
             last_response = r
