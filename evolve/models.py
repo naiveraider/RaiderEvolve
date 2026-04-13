@@ -35,6 +35,26 @@ class CustomFitnessWeights(BaseModel):
     w3: float = Field(0.2, ge=0.0, le=1.0)
 
 
+class MatrixFitnessConfig(BaseModel):
+    """
+    Configurable fitness weights for the 3×3 matrix multiplication task.
+
+    fitness = 1.0 (correct bonus)
+            + w_muls   * (27 − actual_muls)  / 27   * 10
+            + w_adds   * (27 − actual_adds)  / 27   * 0.05
+            + w_time   * (baseline_us − actual_us) / baseline_us * 5
+            + w_length * (baseline_loc − actual_loc) / baseline_loc * 3
+            + w_readability * readability_score (0‒1) * 2
+
+    Incorrect code always returns −10 regardless of weights.
+    """
+    w_muls:        float = Field(1.0, ge=0.0, le=1.0, description="Weight for multiplication savings")
+    w_adds:        float = Field(0.2, ge=0.0, le=1.0, description="Weight for addition savings")
+    w_time:        float = Field(0.2, ge=0.0, le=1.0, description="Weight for runtime savings")
+    w_length:      float = Field(0.2, ge=0.0, le=1.0, description="Weight for code brevity (fewer lines)")
+    w_readability: float = Field(0.2, ge=0.0, le=1.0, description="Weight for code readability heuristic")
+
+
 class EvolutionRequest(BaseModel):
     task: TaskType
     source_code: str = ""
@@ -46,6 +66,7 @@ class EvolutionRequest(BaseModel):
     custom_weights: Optional[CustomFitnessWeights] = None
     matrix_alpha: float = Field(0.01, ge=0.0)
     matrix_beta: float = Field(0.005, ge=0.0)
+    matrix_fitness: Optional[MatrixFitnessConfig] = None
     strategies: Optional[List[EvolutionStrategy]] = None
     include_pseudocode_log: bool = True
     seed: Optional[int] = None

@@ -35,6 +35,7 @@ class EvalConfig:
     w3: float
     matrix_alpha: float
     matrix_beta: float
+    matrix_fitness_cfg: object = None   # MatrixFitnessConfig | None
 
 
 def _evaluate(
@@ -49,7 +50,7 @@ def _evaluate(
     if cfg.task == TaskType.PACMAN:
         fit, meta = pacman_fitness(code, rng, cfg.w1, cfg.w2, cfg.w3)
     else:
-        fit, meta = matrix_correctness_and_ops(code, cfg.matrix_alpha, cfg.matrix_beta)
+        fit, meta = matrix_correctness_and_ops(code, cfg.matrix_alpha, cfg.matrix_beta, cfg.matrix_fitness_cfg)
     memory.put_cached_fitness(code, fit, meta)
     return fit, meta, False
 
@@ -90,6 +91,7 @@ def run_evolution_run(
         w3=w3,
         matrix_alpha=req.matrix_alpha,
         matrix_beta=req.matrix_beta,
+        matrix_fitness_cfg=req.matrix_fitness if req.task.value == "matrix" else None,
     )
 
     seed_code = _initial_code(req.task, req.source_code)

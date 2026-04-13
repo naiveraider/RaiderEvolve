@@ -144,10 +144,15 @@ export default function Page() {
   const [w1, setW1] = useState(0.5);
   const [w2, setW2] = useState(0.3);
   const [w3, setW3] = useState(0.2);
-  // matrix_alpha / matrix_beta are kept for API shape compatibility but the
-  // backend now uses hardcoded MUL_WEIGHT=10 / ADD_WEIGHT=0.05 internally.
   const matrixAlpha = 0.0;
   const matrixBeta  = 0.0;
+
+  // Matrix fitness component weights (each 0–1)
+  const [mfMuls,        setMfMuls]        = useState(1.0);
+  const [mfAdds,        setMfAdds]        = useState(0.2);
+  const [mfTime,        setMfTime]        = useState(0.2);
+  const [mfLength,      setMfLength]      = useState(0.2);
+  const [mfReadability, setMfReadability] = useState(0.2);
   const [strategies, setStrategies] = useState<Strategy[]>([
     "single_llm",
     "random_only",
@@ -227,6 +232,13 @@ export default function Page() {
         fitnessPreset === "custom" && task === "pacman" ? { w1, w2, w3 } : null,
       matrix_alpha: matrixAlpha,
       matrix_beta: matrixBeta,
+      matrix_fitness: task === "matrix" ? {
+        w_muls:        mfMuls,
+        w_adds:        mfAdds,
+        w_time:        mfTime,
+        w_length:      mfLength,
+        w_readability: mfReadability,
+      } : null,
       strategies,
       include_pseudocode_log: true,
     };
@@ -492,27 +504,56 @@ export default function Page() {
               </div>
             )}
             {task === "matrix" && (
-              <div style={{
-                marginTop: 8,
-                padding: "10px 12px",
-                background: "var(--surface2, #1e1e2e)",
-                borderRadius: 6,
-                fontSize: "0.82rem",
-                lineHeight: 1.65,
-                color: "var(--text2, #cdd6f4)",
-                fontFamily: "monospace",
-              }}>
-                <div style={{ fontWeight: 600, marginBottom: 4, fontFamily: "sans-serif", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", opacity: 0.7 }}>Fitness = correctness + operation cost</div>
-                <div>fitness = <strong>correctness</strong> (1 if correct, −10 if wrong)</div>
-                <div>&nbsp;&nbsp;&nbsp;&nbsp;+ <strong style={{color:"#a6e3a1"}}>mul savings</strong> = (27 − actual_muls) / 27 × 10</div>
-                <div>&nbsp;&nbsp;&nbsp;&nbsp;+ <strong>add savings</strong> = (27 − actual_adds) / 27 × 0.05</div>
-                <div style={{ marginTop: 6, opacity: 0.75, fontFamily: "sans-serif" }}>
-                  Operations counted at <em>runtime</em> — loops × iterations, not AST symbols.
-                </div>
-                <div style={{ marginTop: 4, borderTop: "1px solid #313244", paddingTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                  <span>Standard loop (27 muls)</span><span style={{color:"#f38ba8"}}>1.000</span>
-                  <span>25 muls</span><span style={{color:"#fab387"}}>≈ 1.74</span>
-                  <span>Laderman 1976 (23 muls)</span><span style={{color:"#a6e3a1"}}>≈ 2.35</span>
+              <div style={{ marginTop: 8 }}>
+                <p className="muted" style={{ marginBottom: 6, fontSize: "0.78rem" }}>
+                  Configure which properties the evolution optimises. Each weight 0–1.
+                </p>
+                {([
+                  { key: "muls",        label: "Multiplications ↓", val: mfMuls,        set: setMfMuls,        desc: "(27−muls)/27 × 10" },
+                  { key: "adds",        label: "Additions ↓",       val: mfAdds,        set: setMfAdds,        desc: "(27−adds)/27 × 0.05" },
+                  { key: "time",        label: "Runtime ↓",         val: mfTime,        set: setMfTime,        desc: "(baseline_μs − actual_μs)/baseline × 5" },
+                  { key: "length",      label: "Code brevity ↓",    val: mfLength,      set: setMfLength,      desc: "(baseline_LOC − actual_LOC)/baseline × 3" },
+                  { key: "readability", label: "Readability ↑",     val: mfReadability, set: setMfReadability, desc: "heuristic (comments, names) × 2" },
+                ] as { key: string; label: string; val: number; set: (v: number) => void; desc: string }[]).map(({ key, label, val, set, desc }) => (
+                  <div key={key} style={{ display: "grid", gridTemplateColumns: "140px 1fr 44px", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                    <label style={{ margin: 0, fontSize: "0.8rem" }}>{label}</label>
+                    <input
+                      type="range" min={0} max={1} step={0.05}
+                      value={val}
+                      onChange={(e) => set(+e.target.value)}
+                      style={{ margin: 0 }}
+                    />
+                    <input
+                      type="number" min={0} max={1} step={0.05}
+                      value={val}
+                      onChange={(e) => set(Math.min(1, Math.max(0, +e.target.value)))}
+                      style={{ padding: "2px 4px", fontSize: "0.8rem", textAlign: "right" }}
+                    />
+                    <span style={{ gridColumn: "2 / 4", fontSize: "0.7rem", color: "var(--muted)", marginTop: -4 }}>{desc}</span>
+                  </div>
+                ))}
+                <div style={{
+                  marginTop: 8,
+                  padding: "8px 10px",
+                  background: "var(--surface2, #1e1e2e)",
+                  borderRadius: 6,
+                  fontSize: "0.76rem",
+                  fontFamily: "monospace",
+                  color: "var(--muted)",
+                  lineHeight: 1.7,
+                }}>
+                  <div style={{ fontWeight: 600, fontFamily: "sans-serif", marginBottom: 2 }}>Fitness formula</div>
+                  <div>= 1.0 (correct) − 10 (wrong)</div>
+                  {mfMuls > 0        && <div style={{color:"#a6e3a1"}}>+ {mfMuls.toFixed(2)} × (27−muls)/27 × 10</div>}
+                  {mfAdds > 0        && <div>+ {mfAdds.toFixed(2)} × (27−adds)/27 × 0.05</div>}
+                  {mfTime > 0        && <div style={{color:"#5eead4"}}>+ {mfTime.toFixed(2)} × time_savings × 5</div>}
+                  {mfLength > 0      && <div>+ {mfLength.toFixed(2)} × loc_savings × 3</div>}
+                  {mfReadability > 0 && <div style={{color:"#fbbf24"}}>+ {mfReadability.toFixed(2)} × readability × 2</div>}
+                  <div style={{ borderTop: "1px solid #313244", marginTop: 4, paddingTop: 4, fontFamily: "sans-serif" }}>
+                    <span>27 muls → 1.00 </span>
+                    <span style={{color:"#fab387"}}> | 25 muls → {(1 + mfMuls * (2/27) * 10).toFixed(2)} </span>
+                    <span style={{color:"#a6e3a1"}}> | 23 muls → {(1 + mfMuls * (4/27) * 10).toFixed(2)}</span>
+                  </div>
                 </div>
               </div>
             )}

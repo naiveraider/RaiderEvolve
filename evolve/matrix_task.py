@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+import time
+from typing import Any, Optional
 
 import numpy as np
 
@@ -95,17 +96,69 @@ def load_matmul(code: str):
 #   wrong answer                        → fitness = -10.0
 
 MUL_WEIGHT = 10.0
-# ADD_WEIGHT is intentionally tiny: the goal is to minimise *multiplications*.
-# Trading 70 extra additions for 4 fewer multiplications must be profitable.
-# With ADD_WEIGHT=0.05: saving 4 muls = +1.48, adding 70 adds = -0.13 → net +1.35 ✓
 ADD_WEIGHT  = 0.05
+
+# ── Baseline timing + code-length (measured once against the standard loop) ──
+# These are used to normalise the time/length fitness components.
+_BASELINE_TIME_US: float = 0.0   # filled in lazily on first call
+_BASELINE_LOC: int = 12          # standard 3-loop matmul SLOC
+
+
+def _measure_time_us(fn) -> float:
+    """Average execution time in microseconds over _TEST_PAIRS (plain floats, no tracking)."""
+    t0 = time.perf_counter()
+    for a_lst, b_lst, _ in _TEST_PAIRS:
+        fn(a_lst, b_lst)
+    return (time.perf_counter() - t0) / len(_TEST_PAIRS) * 1e6
+
+
+def _sloc(code: str) -> int:
+    """Source lines of code — non-blank, non-comment lines."""
+    return sum(
+        1 for line in code.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    )
+
+
+def _readability_score(code: str) -> float:
+    """
+    Simple heuristic readability score in [0, 1].
+
+    Rewards:
+      + comment lines (documentation)
+      + descriptive variable names (length > 2, excluding a/b/c/i/j/k/m/n)
+    Penalises:
+      − very long lines (> 100 chars)
+      − single-letter variable assignments (except common matrix/index names)
+    """
+    lines = code.splitlines()
+    if not lines:
+        return 0.0
+    total = len(lines)
+    comment_lines = sum(1 for l in lines if l.strip().startswith("#"))
+    long_lines    = sum(1 for l in lines if len(l) > 100)
+
+    # Descriptive names: look for assignments `name = ` where name is > 2 chars
+    import re
+    assignments = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=', code)
+    _common = {"a", "b", "c", "i", "j", "k", "m", "n", "r", "s", "t",
+               "fn", "ns", "ok", "re"}
+    descriptive = sum(1 for v in assignments if len(v) > 2 and v not in _common)
+    single_letter = sum(1 for v in assignments if len(v) == 1 and v not in {"a","b","c","i","j","k","m","n"})
+
+    score = (
+        + (comment_lines / max(total, 1)) * 0.4
+        + min(descriptive / max(total, 1), 0.3) * 1.0
+        - (long_lines    / max(total, 1)) * 0.3
+        - (single_letter / max(total, 1)) * 0.2
+    )
+    return max(0.0, min(1.0, 0.5 + score))
 
 
 def _eval_once(fn) -> tuple[bool, int, int, str]:
     """
     Run fn over all _TEST_PAIRS with TrackedNum inputs.
     Returns (correct, avg_muls, avg_adds, error_msg).
-    Single loop: correctness + op counting in one pass (no duplicate calls).
     """
     total_muls = total_adds = 0
     for a_lst, b_lst, expected in _TEST_PAIRS:
@@ -125,9 +178,29 @@ def _eval_once(fn) -> tuple[bool, int, int, str]:
 
 def matrix_correctness_and_ops(
     code: str,
-    alpha: float = 0.0,   # kept for API compat
+    alpha: float = 0.0,    # kept for API compat
     beta:  float = 0.0,
+    cfg: Optional[Any] = None,   # MatrixFitnessConfig | None
 ) -> tuple[float, dict[str, Any]]:
+    """
+    Evaluate a matmul implementation with configurable fitness components.
+
+    cfg (MatrixFitnessConfig) controls which components contribute:
+      w_muls        — multiplication savings  (default 1.0)
+      w_adds        — addition savings        (default 0.0)
+      w_time        — runtime savings         (default 0.0)
+      w_length      — code brevity            (default 0.0)
+      w_readability — readability heuristic   (default 0.0)
+    """
+    global _BASELINE_TIME_US
+
+    # Default weights when no config is supplied
+    w_muls        = getattr(cfg, "w_muls",        1.0) if cfg else 1.0
+    w_adds        = getattr(cfg, "w_adds",        0.0) if cfg else 0.0
+    w_time        = getattr(cfg, "w_time",        0.0) if cfg else 0.0
+    w_length      = getattr(cfg, "w_length",      0.0) if cfg else 0.0
+    w_readability = getattr(cfg, "w_readability", 0.0) if cfg else 0.0
+
     metrics: dict[str, Any] = {"correctness": 0.0}
 
     try:
@@ -136,8 +209,7 @@ def matrix_correctness_and_ops(
         metrics["error"] = str(e)
         return -1e6, metrics
 
-    # Run with timeout — daemon thread returns control immediately on timeout;
-    # the background thread finishes on its own (Python can't kill threads).
+    # ── Run with timeout ──────────────────────────────────────────────────
     import threading
     result_box: list = [None]
     exc_box:    list = [None]
@@ -161,9 +233,9 @@ def matrix_correctness_and_ops(
 
     ok, actual_muls, actual_adds, err = result_box[0]
 
-    metrics["correctness"] = 1.0 if ok else 0.0
-    metrics["actual_muls"]  = actual_muls
-    metrics["actual_adds"]  = actual_adds
+    metrics["correctness"]   = 1.0 if ok else 0.0
+    metrics["actual_muls"]   = actual_muls
+    metrics["actual_adds"]   = actual_adds
     metrics["baseline_muls"] = BASELINE_MULS
     metrics["baseline_adds"] = BASELINE_ADDS
     if err:
@@ -173,11 +245,51 @@ def matrix_correctness_and_ops(
         metrics["note"] = "incorrect — no operation bonus"
         return -10.0, metrics
 
+    # ── Operation savings ─────────────────────────────────────────────────
     mul_savings = (BASELINE_MULS - actual_muls) / BASELINE_MULS
     add_savings = (BASELINE_ADDS - actual_adds) / BASELINE_ADDS
-    fitness = 1.0 + mul_savings * MUL_WEIGHT + add_savings * ADD_WEIGHT
-    metrics["mul_savings_score"] = round(mul_savings * MUL_WEIGHT, 4)
-    metrics["add_savings_score"] = round(add_savings * ADD_WEIGHT, 4)
+    metrics["mul_savings_score"] = round(mul_savings * MUL_WEIGHT * w_muls, 4)
+    metrics["add_savings_score"] = round(add_savings * ADD_WEIGHT * w_adds, 4)
+
+    fitness = 1.0 + mul_savings * MUL_WEIGHT * w_muls \
+                  + add_savings * ADD_WEIGHT * w_adds
+
+    # ── Runtime savings (only measured if w_time > 0) ─────────────────────
+    time_score = 0.0
+    if w_time > 0:
+        if _BASELINE_TIME_US <= 0:
+            try:
+                from evolve.matrix_task import baseline_matrix_code, load_matmul as _lm
+                _bl_fn = _lm(baseline_matrix_code())
+                _BASELINE_TIME_US = max(_measure_time_us(_bl_fn), 0.01)
+            except Exception:
+                _BASELINE_TIME_US = 1.0
+        actual_us = _measure_time_us(fn)
+        time_savings = (_BASELINE_TIME_US - actual_us) / max(_BASELINE_TIME_US, 0.01)
+        time_score = max(0.0, time_savings) * 5.0 * w_time
+        metrics["actual_time_us"]   = round(actual_us, 2)
+        metrics["baseline_time_us"] = round(_BASELINE_TIME_US, 2)
+        metrics["time_score"]       = round(time_score, 4)
+        fitness += time_score
+
+    # ── Code length (brevity) ─────────────────────────────────────────────
+    length_score = 0.0
+    if w_length > 0:
+        actual_loc  = _sloc(code)
+        loc_savings = (_BASELINE_LOC - actual_loc) / max(_BASELINE_LOC, 1)
+        length_score = max(0.0, loc_savings) * 3.0 * w_length
+        metrics["actual_loc"]   = actual_loc
+        metrics["baseline_loc"] = _BASELINE_LOC
+        metrics["length_score"] = round(length_score, 4)
+        fitness += length_score
+
+    # ── Readability ───────────────────────────────────────────────────────
+    readability_score = 0.0
+    if w_readability > 0:
+        readability_score = _readability_score(code) * 2.0 * w_readability
+        metrics["readability_score"] = round(readability_score, 4)
+        fitness += readability_score
+
     return fitness, metrics
 
 
