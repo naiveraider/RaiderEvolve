@@ -1,8 +1,149 @@
-# Evolve System
+# Evolve System - RaiderEvolve
 
-LLM-guided evolutionary optimization (OpenEvolve-style loop) with Pacman and 3×3 matrix tasks, FastAPI backend, and Next.js UI.
+**Course:** CS-5381-D01, **Group No.3** (Lirong Chen, Jacob Ray, Zhuo Qian, MD A Rahman)
+
+LLM-guided evolutionary optimization (OpenEvolve-style loop) for a Pacman
+path-finding agent and a 3×3 matrix-multiplication task. FastAPI backend,
+Next.js frontend, Docker Compose packaging.
 
 ---
+
+## Project Description
+
+RaiderEvolve is a closed-loop code-evolution framework that treats a Python
+function as "DNA" and iteratively refines it across generations. Each
+generation runs the OpenEvolve-style cycle:
+
+1. **Select** top-k / elite / diversity-aware parents from the memory store.
+2. **Mutate** them via a hybrid strategy. An LLM performs semantic
+   refactoring of the candidate code, random perturbation preserves
+   diversity, and template rewrites insert proven building blocks.
+3. **Evaluate** each child against a task-specific fitness function in a
+   sandboxed runner and record metrics (fitness, path cost, steps,
+   runtime, cells explored).
+4. **Store** the best candidates in a deduplicated memory for the next
+   generation.
+
+For the Pacman task the expected evolution chain is
+**DFS -> BFS -> UCS -> A\*** on weighted mud mazes, and fitness converges
+from about 895 to about 961 within 4 to 5 generations.
+
+## Features
+
+- Two built-in tasks: **Pacman weighted-maze path-finding** (`choose_action`
+  style, DFS baseline) and **3×3 matrix multiplication** (correctness +
+  operation count).
+- Three selection modes: `top_k`, `elite`, `diversity`.
+- Three comparison strategies runnable side-by-side from the UI:
+  `single_llm` (one-shot), `random_only` (no LLM), and `full`
+  (LLM-guided evolution).
+- Custom fitness weights (`w1`, `w2`, `w3`) for ablation studies.
+- Sandboxed per-candidate evaluation with a hard 3-second timeout and a
+  sentinel penalty for crashing candidates.
+- Server-Sent Events streaming for live per-generation updates in the UI.
+- Deduplicating memory store (code-hash keyed) to avoid redundant LLM
+  calls on revisited candidates.
+- Docker Compose one-command deployment for graders.
+
+## System Architecture
+
+```
+                  ┌──────────────────────────────────────┐
+                  │         Browser / User               │
+                  └──────────────────┬───────────────────┘
+                                     │  HTTP + SSE
+                  ┌──────────────────▼───────────────────┐
+                  │   Next.js Frontend  (port 3000)      │
+                  │   page.tsx, Recharts, AbortCtrl      │
+                  └──────────────────┬───────────────────┘
+                                     │  /api/backend/*  (proxy)
+                  ┌──────────────────▼───────────────────┐
+                  │   FastAPI Backend   (port 8000)      │
+                  │   main.py  (uvicorn)                 │
+                  │   /evolve/stream  /evolve/sync       │
+                  │   /analytics/best-up-to              │
+                  │   /export/fitness-csv  /health       │
+                  └──────────────────┬───────────────────┘
+                                     │
+                  ┌──────────────────▼───────────────────┐
+                  │          Evolution Engine            │
+                  │  1 Controller     -> generation loop │
+                  │  2 LLM Client     -> OpenAI-compat   │
+                  │  3 Evaluator      -> pacman_env /    │
+                  │                      matrix_task     │
+                  │  4 Memory Store   -> dedup cache     │
+                  │  5 Mutations      -> LLM / random /  │
+                  │                      template        │
+                  └──────────────────┬───────────────────┘
+                                     │  HTTPS
+                                     ▼
+                             OpenAI-compatible LLM
+                         (OpenAI / xAI Grok / Groq)
+```
+
+Source layout:
+
+| Path | Role |
+|------|------|
+| `main.py` | FastAPI entrypoint, job registry, SSE streaming |
+| `evolve/controller.py` | Generation loop, orchestration |
+| `evolve/llm_client.py` | LLM API wrapper with retry + backoff |
+| `evolve/pacman_env.py` | Pacman fitness evaluator (sandboxed) |
+| `evolve/matrix_task.py` | Matrix-multiply task + scorer |
+| `evolve/memory_store.py` | Candidate memory with dedup cache |
+| `evolve/random_mutation.py` | Random / template mutation |
+| `evolve/selection.py` | Selection strategies |
+| `web/` | Next.js frontend (React, Recharts) |
+| `data/` | Per-member Round 2 data reports (`{name}_data.csv` / `.docx`) |
+
+## Demo Video
+
+> _Video link placeholder. Replace with the final URL before submission._
+>
+> `https://<insert-video-url-here>`
+
+A 2 to 3 minute screencast walks through selecting the Pacman task, choosing
+the three comparison strategies, running a 4-generation evolution, and
+inspecting the fitness / step / runtime curves in the live dashboard.
+
+## Prerequisites
+
+- **OS:** Windows 10/11, macOS, or Linux (Ubuntu 22.04+)
+- **Python:** 3.11 or newer
+- **Node.js:** 20 LTS or newer (frontend only)
+- **Docker & Docker Compose v2** (optional, for the one-command setup)
+- **LLM API key** from any OpenAI-compatible provider. Set
+  `OPENAI_API_KEY` in `.env`. If the key is missing the backend falls
+  back to a deterministic mock and does not make real API calls, so the
+  prototype is still runnable without credentials.
+- **Hardware:** 8 GB RAM minimum, 16 GB recommended when running
+  concurrent evolution strategies. A modern multi-core CPU is sufficient;
+  no GPU required.
+
+## Data & Data Formats
+
+RaiderEvolve does not train a model, so there is no training dataset. All
+"data" is generated at run time by the evaluator and stored in-memory and
+as JSON artifacts:
+
+- **Task inputs (static):** the Pacman evaluator ships with two built-in
+  weighted mud mazes (`mudMaze`, `largeMudMaze`) defined in
+  `evolve/pacman.py`. `'%'` = wall, `' '` = open (cost 1), `'M'` = mud
+  (cost 5).
+- **Candidate records (in-memory):** each evolved function is stored as
+  a `CandidateRecord` (`evolve/models.py`) with fields `id`, `generation`,
+  `code`, `fitness`, `parents`, `strategy_tag`, `mutation_notes`,
+  `metrics`.
+- **Per-run metrics:** `avg_score`, `avg_cost`, `avg_steps`,
+  `avg_cells_accessed`, `success_rate`, `eval_time_ms`, `layouts_used`.
+- **Round 2 per-member reports:** `data/{member}/{member}_data.csv` and
+  `data/{member}/{member}_data.docx`. CSV columns vary per member since
+  each member tests one parameter configuration; all share a common set
+  of metrics: `strategy, generation, best_fitness, avg_fitness,
+  best_avg_score, best_avg_cost, best_avg_steps,
+  best_avg_cells_accessed, best_eval_time_ms, best_success_rate`.
+- **Exported CSV from the API:** `POST /export/fitness-csv` returns a CSV
+  with columns `strategy, generation, avg_fitness, best_fitness`.
 
 ## Table of Contents
 
