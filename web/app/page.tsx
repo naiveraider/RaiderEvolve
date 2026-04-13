@@ -418,7 +418,7 @@ export default function Page() {
             <h2>Input</h2>
             <label>Task</label>
             <select value={task} onChange={(e) => setTask(e.target.value as Task)}>
-              <option value="pacman">Pacman agent (choose_action)</option>
+              <option value="pacman">Pacman maze search (DFS baseline)</option>
               <option value="matrix">3×3 matrix multiply (matmul)</option>
             </select>
             <p className="muted" style={{ marginTop: "0.75rem" }}>
