@@ -28,7 +28,10 @@ def build_llm_context(
     code_chars  = _CODE_CHARS.get(task_key, _DEFAULT_CODE_CHARS)
     n_best      = _N_BEST.get(task_key, _DEFAULT_N_BEST)
 
-    best_hist = memory.best_n(n_best)
+    # Use the current best code as semantic query for Qdrant retrieval.
+    # Falls back to linear ranking if Qdrant is unavailable.
+    query_code = max(population, key=lambda r: r.fitness).code if population else None
+    best_hist = memory.best_n(n_best, query_code=query_code)
     worst_hist = memory.worst_n(1)
     prev_best = max((r.fitness for r in memory.records if r.generation < generation), default=None)
     cur_best = max((r.fitness for r in population), default=None)
