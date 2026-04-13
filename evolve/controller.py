@@ -80,7 +80,7 @@ def run_evolution_run(
     progress_cb: ProgressCallback = None,
 ) -> StrategyRunResult:
     rng = random.Random(req.seed if req.seed is not None else uuid.uuid4().int % (2**32))
-    memory = MemoryStore()
+    memory = MemoryStore(task=req.task.value)
     w1, w2, w3 = _weights_from_preset(req)
     cfg = EvalConfig(
         task=req.task,
@@ -130,7 +130,7 @@ def run_evolution_run(
     if strategy == EvolutionStrategy.SINGLE_LLM:
         if progress_cb:
             progress_cb({"gen": 0, "total": 1, "strategy": strategy.value, "status": "llm_call"})
-        ctx = build_llm_context(req.task, population, memory, 0, 1)
+        ctx = build_llm_context(req.task, population, memory, 0, 1, single_shot=True)
         child_code = improve_code_sync(SYSTEM_PROMPT, ctx)
         child = eval_and_store(0, child_code, [root.id], "single_llm", "one-shot LLM refinement")
         population = [max([root, child], key=lambda x: x.fitness)]
