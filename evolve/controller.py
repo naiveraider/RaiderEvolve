@@ -162,7 +162,8 @@ def run_evolution_run(
         )
 
     best0 = max(p.fitness for p in population)
-    avg0 = sum(p.fitness for p in population) / len(population)
+    valid0 = [p for p in population if p.fitness > -999]
+    avg0 = sum(p.fitness for p in valid0) / len(valid0) if valid0 else best0
     best_id0 = max(population, key=lambda x: x.fitness).id
     fitness_curve.append(best0)
     avg_per_gen.append(avg0)
@@ -238,7 +239,10 @@ def run_evolution_run(
         # 6) Ranking
         scored.sort(key=lambda x: x.fitness, reverse=True)
         best = scored[0]
-        avg_f = sum(s.fitness for s in scored) / len(scored)
+        # Exclude evaluation failures (fitness <= -999) from the average so that
+        # LLM-generated code with syntax errors doesn't distort the avg metric.
+        valid = [s for s in scored if s.fitness > -999]
+        avg_f = sum(s.fitness for s in valid) / len(valid) if valid else scored[0].fitness
 
         avg_per_gen.append(avg_f)
         best_per_gen.append(best.fitness)
