@@ -154,7 +154,8 @@ Each generation executes an **OpenEvolve-style cycle**:
 
 > Replace the placeholder URL with the final submission link before uploading.
 
-**Link:** `https://<insert-video-url-here>`
+**Pacman task Link:** `http://43.130.56.234:8080/pacman.mp4`
+**Matrix task Link:** `http://43.130.56.234:8080/matirx.mp4`
 
 The screencast covers:
 
