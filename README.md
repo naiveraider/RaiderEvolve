@@ -136,7 +136,7 @@ Each generation executes an **OpenEvolve-style cycle**:
 | `evolve/context_builder.py` | LLM prompt assembly (few-shot, history, hints) |
 | `evolve/llm_client.py` | LLM API wrapper with exponential-backoff retry |
 | `evolve/pacman_env.py` | Sandboxed Pacman fitness evaluator |
-| `evolve/pacman.py` | Berkeley CS188 Pacman game engine [12] |
+| `evolve/pacman.py` | Berkeley CS188 Pacman game engine [13] |
 | `evolve/matrix_task.py` | Matrix task evaluator + `_TrackedNum` counter |
 | `evolve/memory_store.py` | In-memory candidate store with dedup cache |
 | `evolve/qdrant_store.py` | Fire-and-forget Qdrant persistence layer |
@@ -567,8 +567,26 @@ The test suite currently covers the `/health` endpoint. The `pytest.ini` sets `p
 
 ## 14. References
 
-[10] Zhang, S., et al. **"OpenEvolve: An Open-Source Implementation of DeepMind's AlphaEvolve Framework."** GitHub, 2025. [https://github.com/codelion/openevolve](https://github.com/codelion/openevolve)
+[1] Zhang, S., et al. **"OpenEvolve: An Open-Source Implementation of DeepMind's AlphaEvolve Framework."** GitHub, 2025. [https://github.com/codelion/openevolve](https://github.com/codelion/openevolve)
 
-[11] Novikov, A., et al. **"AlphaEvolve: A Gemini-based coding agent for designing advanced algorithms."** DeepMind Technical Report, 2025. [https://deepmind.google/discover/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/](https://deepmind.google/discover/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/)
+[2] Novikov, A., et al. **"AlphaEvolve: A Coding Agent for Scientific and Algorithmic Discovery."** arXiv:2506.13131, 2025. [https://arxiv.org/abs/2506.13131](https://arxiv.org/abs/2506.13131)
 
-[12] Laderman, J. D. **"A noncommutative algorithm of order 23 for multiplying 6×6 matrices using 354 multiplications."** *Journal of the ACM*, 23(1):148–156, 1976. — Pacman game engine adapted from the Berkeley CS188 AI course project: [https://inst.eecs.berkeley.edu/~cs188/sp24/assets/projects/search.zip](https://inst.eecs.berkeley.edu/~cs188/sp24/assets/projects/search.zip)
+[3] Laderman, J. D. **"A noncommutative algorithm of order 23 for multiplying 6×6 matrices using 354 multiplications."** *Journal of the ACM*, 23(1):148–156, 1976.
+
+[4] UC Berkeley CS188. **"The Pacman AI Projects."** [http://ai.berkeley.edu/project_overview.html](http://ai.berkeley.edu/project_overview.html)
+
+[5] Lehman, J., et al. **"Evolution through Large Language Models (ELM)."** arXiv preprint arXiv:2206.08896, 2022. [https://arxiv.org/abs/2206.08896](https://arxiv.org/abs/2206.08896)
+
+[6] Yang, C., et al. **"Large Language Models as Optimizers (OPRO)."** arXiv:2309.03409, 2023. [https://arxiv.org/abs/2309.03409](https://arxiv.org/abs/2309.03409)
+
+[7] **"CodeEvolve: An Open-Source Evolutionary Coding Agent for Algorithm Discovery and Optimization."** GitHub, 2024. [https://github.com/codelion/codeevolve](https://github.com/codelion/codeevolve)
+
+[8] Fawzi, A., et al. **"Discovering Faster Matrix Multiplication Algorithms with Reinforcement Learning."** *Nature*, 610:47–53, 2022. [https://doi.org/10.1038/s41586-022-05172-4](https://doi.org/10.1038/s41586-022-05172-4)
+
+[9] Liu, S., et al. **"Large Language Models as Evolution Strategies."** arXiv:2402.18381, 2024. [https://arxiv.org/abs/2402.18381](https://arxiv.org/abs/2402.18381)
+
+[10] Koza, J. R. **"Genetic Programming: On the Programming of Computers by Means of Natural Selection."** MIT Press, 1992.
+
+[11] Prographers. **"Slack-GPT: A Slack Bot Implementation for Integration with OpenAI ChatGPT."** GitHub. [https://github.com/Prographers/Slack-GPT](https://github.com/Prographers/Slack-GPT)
+
+[12] **"The Complete Guide to Building Your First AI Agent with LangGraph."** *Data Science Collective*, 2025. [https://datasciencecollective.com/the-complete-guide-to-building-your-first-ai-agent-with-langgraph](https://datasciencecollective.com/the-complete-guide-to-building-your-first-ai-agent-with-langgraph)
