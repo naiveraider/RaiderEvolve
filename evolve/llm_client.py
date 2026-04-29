@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+import threading
 import time
 from typing import Any
 
@@ -13,10 +14,12 @@ from evolve.settings import settings
 # OpenAI rate limits: 429; gateways sometimes return 502/503 under load.
 _RETRYABLE_STATUS = frozenset({429, 502, 503})
 _MAX_ATTEMPTS = 3
+_CLIENT_LOCK = threading.Lock()
+_SYNC_CLIENT: httpx.Client | None = None
 
 
 class LLMRequestError(Exception):
-    """OpenAI-compatible chat/completions request failed (HTTP or parse)."""
+    """LLM request failed (HTTP or parse)."""
 
 
 def extract_code_block(text: str) -> str:
@@ -63,9 +66,15 @@ def _http_error_message(response: httpx.Response, *, after_retries: bool) -> str
             "403: Often billing/credits, model access, or organization restrictions. Check OpenAI account and model availability."
         )
     elif status == 404:
-        hints.append(
-            "404: Wrong OPENAI_BASE_URL (expect .../v1, not .../chat/completions)."
-        )
+        if "generativelanguage.googleapis.com" in url:
+            hints.append(
+                "404: Gemini model name is unavailable for this API/key. "
+                "Use a model returned by the Gemini ListModels endpoint."
+            )
+        else:
+            hints.append(
+                "404: Wrong OPENAI_BASE_URL (expect .../v1, not .../chat/completions)."
+            )
     elif status == 429:
         hints.append(
             "429: Rate limited" + (" after retries." if after_retries else ".") + " Reduce strategies/generations or wait."
@@ -88,13 +97,55 @@ def _parse_completion(data: dict[str, Any]) -> str:
     return extract_code_block(content or "")
 
 
+def _use_gemini_direct() -> bool:
+    return settings.llm_model.startswith("gemini-") and bool(settings.gemini_api_key)
+
+
+def _gemini_model_name() -> str:
+    return settings.llm_model.strip().removeprefix("models/")
+
+
+def _generate_gemini_sync(system_prompt: str, user_prompt: str, max_tokens: int) -> str:
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError as e:
+        raise LLMRequestError(
+            "Gemini SDK is not installed. Run `pip install -r requirements.txt`."
+        ) from e
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    response = client.models.generate_content(
+        model=_gemini_model_name(),
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.35,
+            max_output_tokens=max_tokens,
+        ),
+    )
+    try:
+        text = response.text
+    except Exception as e:
+        raise LLMRequestError(f"Gemini returned no text: {response!r}") from e
+    return extract_code_block(text or "")
+
+
 # Per-task max_tokens: matmul code is short (~40 lines); pacman code is longer.
 # Capping tokens dramatically reduces LLM response time (model stops earlier).
 _MAX_TOKENS_BY_TASK = {
-    "matrix": 700,
-    "pacman": 1400,
+    "matrix": 600,
+    "pacman": 900,
 }
 _DEFAULT_MAX_TOKENS = 1200
+
+
+def _sync_client() -> httpx.Client:
+    global _SYNC_CLIENT
+    with _CLIENT_LOCK:
+        if _SYNC_CLIENT is None or _SYNC_CLIENT.is_closed:
+            _SYNC_CLIENT = httpx.Client(timeout=45.0)
+        return _SYNC_CLIENT
 
 
 def _build_payload(system_prompt: str, user_prompt: str, max_tokens: int) -> dict:
@@ -121,10 +172,18 @@ async def improve_code_async(
     system_prompt: str,
     user_prompt: str,
 ) -> str:
-    if not settings.openai_api_key:
+    if not settings.openai_api_key and not _use_gemini_direct():
         return _mock_improve(user_prompt)
 
-    url     = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
+    if _use_gemini_direct():
+        return await asyncio.to_thread(
+            _generate_gemini_sync,
+            system_prompt,
+            user_prompt,
+            _detect_max_tokens(user_prompt),
+        )
+
+    url = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
     payload = _build_payload(system_prompt, user_prompt, _detect_max_tokens(user_prompt))
 
@@ -147,26 +206,29 @@ async def improve_code_async(
 
 
 def improve_code_sync(system_prompt: str, user_prompt: str) -> str:
-    if not settings.openai_api_key:
+    if not settings.openai_api_key and not _use_gemini_direct():
         return _mock_improve(user_prompt)
 
-    url     = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
+    if _use_gemini_direct():
+        return _generate_gemini_sync(system_prompt, user_prompt, _detect_max_tokens(user_prompt))
+
+    url = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
     payload = _build_payload(system_prompt, user_prompt, _detect_max_tokens(user_prompt))
 
     last_response: httpx.Response | None = None
-    with httpx.Client(timeout=45.0) as client:
-        for attempt in range(_MAX_ATTEMPTS):
-            r = client.post(url, json=payload, headers=headers)
-            last_response = r
-            if r.status_code in _RETRYABLE_STATUS and attempt < _MAX_ATTEMPTS - 1:
-                time.sleep(_backoff_seconds(attempt, r))
-                continue
-            if r.is_error:
-                _raise_llm_http_error(
-                    r, after_retries=r.status_code in _RETRYABLE_STATUS and attempt == _MAX_ATTEMPTS - 1
-                )
-            return _parse_completion(r.json())
+    client = _sync_client()
+    for attempt in range(_MAX_ATTEMPTS):
+        r = client.post(url, json=payload, headers=headers)
+        last_response = r
+        if r.status_code in _RETRYABLE_STATUS and attempt < _MAX_ATTEMPTS - 1:
+            time.sleep(_backoff_seconds(attempt, r))
+            continue
+        if r.is_error:
+            _raise_llm_http_error(
+                r, after_retries=r.status_code in _RETRYABLE_STATUS and attempt == _MAX_ATTEMPTS - 1
+            )
+        return _parse_completion(r.json())
     if last_response is not None and last_response.is_error:
         _raise_llm_http_error(last_response, after_retries=True)
     raise LLMRequestError("LLM request failed after retries")

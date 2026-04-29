@@ -6,15 +6,15 @@ from evolve.models import CandidateRecord, TaskType
 
 # Context size caps — smaller = faster LLM calls (fewer input tokens).
 _CODE_CHARS: dict[str, int] = {
-    "matrix": 1200,
-    "pacman": 2500,
+    "matrix": 900,
+    "pacman": 1400,
 }
 _N_BEST: dict[str, int] = {
-    "matrix": 2,
-    "pacman": 3,
+    "matrix": 1,
+    "pacman": 1,
 }
-_DEFAULT_CODE_CHARS = 2000
-_DEFAULT_N_BEST     = 3
+_DEFAULT_CODE_CHARS = 1200
+_DEFAULT_N_BEST     = 1
 
 
 def build_llm_context(
@@ -81,7 +81,7 @@ def build_llm_context(
                 muls = r.metrics.get("actual_muls")
                 if muls is not None:
                     muls_info = f"  muls={muls}"
-            lines.append(f"fitness={r.fitness:.4f}{muls_info}\n" + r.code[:600])
+            lines.append(f"fitness={r.fitness:.4f}{muls_info}\n" + r.code[:300])
     else:
         # single_shot: only show current best code, no scores, no history
         best = max(population, key=lambda r: r.fitness) if population else None

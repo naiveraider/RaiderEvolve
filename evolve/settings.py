@@ -11,7 +11,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
     """
-    LLM credentials: OPENAI_API_KEY or LLM_API_KEY.
+    LLM credentials: OPENAI_API_KEY / LLM_API_KEY, or GEMINI_API_KEY.
 
     Loads ``.env`` from the current working directory first, then from the repo root
     (so keys still work if ``uvicorn`` is started from another directory).
@@ -33,11 +33,20 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OPENAI_BASE_URL", "OPENAI_API_BASE"),
     )
     llm_model: str = Field(
-        default="gpt-4o-mini",
+        default="gemini-2.0-flash",
         validation_alias=AliasChoices("LLM_MODEL", "OPENAI_MODEL"),
     )
+    gemini_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    )
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     qdrant_url: str = ""
     qdrant_api_key: str = ""
+    enable_profile: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("ENABLE_PROFILE", "PROFILE_ENABLED"),
+    )
 
     @model_validator(mode="after")
     def _normalize_api_key(self) -> Settings:
@@ -46,7 +55,15 @@ class Settings(BaseSettings):
             self.openai_api_key = ""
         else:
             self.openai_api_key = k
+        gk = (self.gemini_api_key or "").strip()
+        if not gk or gk.upper() == "YOUR_API_KEY":
+            self.gemini_api_key = ""
+        else:
+            self.gemini_api_key = gk
         self.openai_base_url = (self.openai_base_url or "").strip().rstrip("/") or "https://api.openai.com/v1"
+        self.gemini_base_url = (
+            self.gemini_base_url or ""
+        ).strip().rstrip("/") or "https://generativelanguage.googleapis.com/v1beta"
         return self
 
 

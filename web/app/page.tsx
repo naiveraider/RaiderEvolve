@@ -120,7 +120,7 @@ export default function Page() {
   const [sourceCode, setSourceCode] = useState<string>(DEFAULT_CODE.pacman);
   const [generations, setGenerations] = useState(4);
   const [populationSize, setPopulationSize] = useState(6);
-  const [topK, setTopK] = useState(3);
+  const [topK, setTopK] = useState(1);
   const [fitnessPreset, setFitnessPreset] = useState<FitnessPreset>("pacman");
   const [w1, setW1] = useState(0.5);
   const [w2, setW2] = useState(0.3);
@@ -156,8 +156,8 @@ export default function Page() {
       setPopulationSize(3);
       setStrategies(["full"]);
     } else {
-      setGenerations(4);
-      setPopulationSize(6);
+      setGenerations(3);
+      setPopulationSize(2);
       setStrategies(["single_llm", "random_only", "full"]);
     }
   }, [task]);

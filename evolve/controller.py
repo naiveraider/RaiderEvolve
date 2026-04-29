@@ -202,7 +202,7 @@ def run_evolution_run(
             ctx = build_llm_context(req.task, parents, memory, gen, req.generations,
                                     algo_description=cfg.algo_description)
             try:
-                parent_cap = 1500 if cfg.task == TaskType.MATRIX else 3000
+                parent_cap = 900 if cfg.task == TaskType.MATRIX else 1600
                 llm_code = improve_code_sync(
                     SYSTEM_PROMPT,
                     ctx + f"\nPARENT_CODE:\n{best_parent.code[:parent_cap]}",
