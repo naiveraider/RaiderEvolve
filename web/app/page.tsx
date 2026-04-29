@@ -164,6 +164,7 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EvolutionResponse | null>(null);
+  const [profileId, setProfileId] = useState<string | null>(null);
   const [genCap, setGenCap] = useState(10);
   const [codeRunIdx, setCodeRunIdx] = useState(0);
   const [genRange, setGenRange] = useState<[number, number]>([0, 999]);
@@ -197,6 +198,7 @@ export default function Page() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setProfileId(null);
     setProgress(null);
     setStrategyDone([]);
     setLiveChart([]);
@@ -287,6 +289,7 @@ export default function Page() {
           } else if (evt.type === "done") {
             const data = evt.result as EvolutionResponse;
             setResult(data);
+            setProfileId(evt.profile_id != null ? String(evt.profile_id) : null);
             const full = data.runs.find((r) => r.strategy === "full");
             const maxG =
               full?.best_per_generation.length ??
@@ -320,6 +323,12 @@ export default function Page() {
     w1,
     w2,
     w3,
+    mfMuls,
+    mfAdds,
+    mfTime,
+    mfLength,
+    mfReadability,
+    algoDesc,
   ]);
 
   const comparisonData = useMemo(() => {
@@ -403,7 +412,10 @@ export default function Page() {
 
   return (
     <main>
-      <h1>Evolve System</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+        <h1>Evolve System</h1>
+        <a href="/profile" className="muted">View cProfile</a>
+      </div>
       <p className="muted" style={{ marginTop: 0 }}>
         OpenEvolve-style loop: selection → context → LLM / random / template mutation →
         evaluation → memory.
@@ -836,6 +848,11 @@ export default function Page() {
             <button type="button" className="primary" style={{ marginTop: "0.75rem" }} onClick={exportCsv}>
               Download fitness CSV
             </button>
+            {profileId && (
+              <p className="muted" style={{ marginBottom: 0 }}>
+                cProfile snapshot saved: <a href="/profile">{profileId}</a>
+              </p>
+            )}
           </section>
 
           <section className="panel">

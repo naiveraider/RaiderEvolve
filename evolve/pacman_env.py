@@ -192,15 +192,17 @@ def pacman_fitness(
     """
     Evaluate agent on weighted mud mazes.
 
-    Fitness = avg_score − w3 * avg_cost
-    (w1 and w2 are kept for API compatibility but avg_score already
-    encodes quality; w3 adds a secondary cost penalty.)
+    Fitness = w1 * score + w2 * survival - w3 * steps
+
+    score    = total adjusted score across runs/layouts
+    survival = fraction of runs that reached the goal
+    steps    = total number of path steps
     """
-    wsum = w1 + w2 + w3
-    if wsum <= 0:
-        w1, w2, w3 = 0.5, 0.3, 0.2
-        wsum = 1.0
-    w1, w2, w3 = w1 / wsum, w2 / wsum, w3 / wsum
+    # wsum = w1 + w2 + w3
+    # if wsum <= 0:
+    #     w1, w2, w3 = 0.5, 0.3, 0.2
+    #     wsum = 1.0
+    # w1, w2, w3 = w1 / wsum, w2 / wsum, w3 / wsum
 
     t_start = time.perf_counter()
 
@@ -226,20 +228,30 @@ def pacman_fitness(
             successes += 1
         details.append(detail)
 
-    avg_score   = sum(scores) / len(scores)
+    total_score = sum(scores)
+    total_steps = sum(steps_list)
+    avg_score   = total_score / len(scores)
     avg_cost    = sum(costs)  / len(costs)
-    avg_steps   = sum(steps_list) / len(steps_list)
+    avg_steps   = total_steps / len(steps_list)
     avg_explore = sum(d.get("cells_accessed", 0) for d in details) / len(details)
+    success_rate = successes / len(chosen)
     eval_ms     = round((time.perf_counter() - t_start) * 1000, 1)
 
-    fitness = avg_score - w3 * avg_cost * 0.01
+    fitness = w1 * total_score + w2 * success_rate - w3 * total_steps
 
     metrics = {
+        "score":              total_score,
+        "steps":              total_steps,
         "avg_score":          avg_score,
         "avg_cost":           avg_cost,
         "avg_steps":          avg_steps,
         "avg_cells_accessed": avg_explore,
-        "success_rate":       successes / len(chosen),
+        "success_rate":       success_rate,
+        "fitness_components": {
+            "score_component":    w1 * total_score,
+            "survival_component": w2 * success_rate,
+            "steps_component":    -w3 * total_steps,
+        },
         "eval_time_ms":       eval_ms,
         "layouts_used":       chosen,
         "run_details":        details,
